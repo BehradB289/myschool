@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سامانه داوری و نظرسنجی مدرسه علوم پزشکی شیراز</title>
+    
+    <!-- فونت فارسی وزیرمتن -->
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Vazirmatn', 'sans-serif'],
+                    },
+                    animation: {
+                        'marquee': 'marquee 25s linear infinite',
+                    },
+                    keyframes: {
+                        marquee: {
+                            '0%': { transform: 'translateX(-100%)' },
+                            '100%': { transform: 'translateX(100%)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- استایل‌های تکمیلی برای انیمیشن‌ها -->
+    <style>
+        body { font-family: 'Vazirmatn', sans-serif; }
+        
+        /* شبیه‌سازی کلاس‌های افزونه tailwindcss-animate */
+        .animate-in { animation: enter 0.5s ease-out; }
+        .slide-in-from-bottom { animation-name: slide-in-bottom; }
+        .slide-in-from-top-2 { animation-name: slide-in-top; }
+        .fade-in { animation-name: fade-in; }
+        .zoom-in { animation-name: zoom-in; }
+        
+        @keyframes enter { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes slide-in-bottom { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slide-in-top { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoom-in { from { transform: scale(0.95); } to { transform: scale(1); } }
+        
+        /* مخفی کردن اسکرول بار در حالت تمام صفحه پروژکتور */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+
+    <!-- Import Map برای مدیریت پکیج‌ها -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+    
+    <!-- Babel برای ترجمه JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
+    
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { 
+          getFirestore, collection, addDoc, onSnapshot, 
+          query, doc, setDoc, deleteDoc, getDocs, orderBy
+        } from 'firebase/firestore';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
+        import { 
+          Activity, Users, Award, Plus, Trash2, 
+          LogOut, CheckCircle, Smartphone, MessageSquare, 
+          ChevronDown, ChevronUp, RefreshCw,
+          Send, AlertCircle, Download, Check, Maximize,
+          Search, Moon, Sun, Filter, Zap, X,
+          ClipboardList 
+        } from 'lucide-react';
+
+        /* تنظیمات فایربیس و متغیرهای محیطی */
+        // بررسی وجود متغیرها برای جلوگیری از خطا در اجرای لوکال
+        const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'med-school-exhibit';
+        
+        let app, auth, db;
+        
+        if (firebaseConfigStr) {
+            const firebaseConfig = JSON.parse(firebaseConfigStr);
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } else {
+            console.warn("تنظیمات فایربیس یافت نشد. برنامه در حالت نمایشی اجرا خواهد شد.");
+        }
+
+        // --- کامپوننت‌های UI ---
+        const Card = ({ children, className = "" }) => (
+          <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 p-6 transition-all duration-300 hover:shadow-md ${className}`}>{children}</div>
+        );
+
+        const Button = ({ onClick, children, variant = "primary", className = "", disabled = false, title="" }) => {
+          const baseStyle = "px-4 py-2 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 text-sm active:scale-95";
+          const variants = {
+            primary: "bg-teal-700 text-white hover:bg-teal-800 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed",
+            secondary: "bg-blue-600 text-white hover:bg-blue-700 shadow-md disabled:opacity-50",
+            danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200",
+            success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md",
+            outline: "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:border-teal-600 hover:text-teal-600 bg-white dark:bg-slate-800",
+            ghost: "text-gray-500 hover:text-teal-600 hover:bg-gray-100 dark:hover:bg-slate-700"
+          };
+          return (
+            <button onClick={onClick} disabled={disabled} title={title} className={`${baseStyle} ${variants[variant]} ${className}`}>
+              {children}
+            </button>
+          );
+        };
+
+        const Input = ({ placeholder, value, onChange, type = "text", className = "" }) => (
+          <input
+            type={type}
+            placeholder={placeholder}
+            value={value}
+            onChange={onChange}
+            className={`w-full p-3 rounded-lg border border-gray-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all bg-gray-50 dark:bg-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 ${className}`}
+          />
+        );
+
+        const TextArea = ({ placeholder, value, onChange, className = "" }) => (
+          <textarea
+            placeholder={placeholder}
+            value={value}
+            onChange={onChange}
+            rows={3}
+            className={`w-full p-3 rounded-lg border border-gray-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all bg-gray-50 dark:bg-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 resize-none ${className}`}
+          />
+        );
+
+        // --- Toast Notification Component ---
+        const Toast = ({ message, type, onClose }) => (
+          <div className={`fixed bottom-4 left-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-white animate-in slide-in-from-bottom duration-300 ${type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+            {type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+            <span className="text-sm font-medium">{message}</span>
+          </div>
+        );
+
+        // --- Full Screen Projector Component ---
+        const ProjectorView = ({ projectResults, voteCounts, onClose, totalVotes }) => {
+            return (
+                <div className="fixed inset-0 z-[100] bg-slate-900 text-white overflow-y-auto p-8 flex flex-col font-sans no-scrollbar" dir="rtl">
+                    <div className="flex justify-between items-center mb-10 border-b border-slate-700 pb-4">
+                        <div>
+                            <h1 className="text-4xl font-black text-teal-400 mb-2">تابلو نتایج زنده</h1>
+                            <p className="text-slate-400 text-xl">مدرسه علوم پزشکی شیراز</p>
+                        </div>
+                        <div className="flex gap-4 items-center">
+                            <div className="bg-slate-800 px-6 py-3 rounded-2xl border border-slate-700">
+                                <span className="block text-sm text-slate-400">تعداد کل آرا</span>
+                                <span className="text-3xl font-bold text-yellow-400">{totalVotes}</span>
+                            </div>
+                            <button onClick={onClose} className="p-3 bg-red-600/20 hover:bg-red-600 rounded-full transition-all">
+                                <X size={32} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1">
+                        {/* Top 3 Podium */}
+                        <div className="lg:col-span-2 bg-slate-800/50 rounded-3xl p-8 border border-slate-700">
+                            <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+                                <Award className="text-yellow-400" size={32}/>
+                                برترین‌های نمایشگاه
+                            </h2>
+                            <div className="space-y-4">
+                                {projectResults.slice(0, 5).map((p, idx) => (
+                                    <div key={p.id} className="flex items-center gap-6 p-4 bg-slate-800 rounded-2xl border border-slate-700 transform hover:scale-[1.01] transition-all">
+                                        <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl font-black ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-slate-300 text-slate-900' : idx === 2 ? 'bg-amber-600 text-amber-100' : 'bg-slate-700 text-slate-300'}`}>
+                                            {idx + 1}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-2xl font-bold mb-1">{p.name}</h3>
+                                            <p className="text-slate-400 text-lg">{p.student}</p>
+                                        </div>
+                                        <div className="text-center px-4">
+                                            <div className="text-sm text-slate-400">امتیاز</div>
+                                            <div className="text-3xl font-bold text-teal-400">{p.totalScore}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="bg-slate-800/50 rounded-3xl p-8 border border-slate-700">
+                            <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+                                <Activity className="text-blue-400" size={32}/>
+                                آمار بازدید
+                            </h2>
+                            <div className="space-y-8">
+                                {[
+                                    { label: 'تکنولوژی', count: voteCounts.tech, color: 'bg-blue-500' },
+                                    { label: 'سرگرمی', count: voteCounts.fun, color: 'bg-emerald-500' },
+                                    { label: 'فرهنگی', count: voteCounts.culture, color: 'bg-indigo-500' }
+                                ].map(cat => (
+                                    <div key={cat.label}>
+                                        <div className="flex justify-between text-xl mb-2 font-medium">
+                                            <span>{cat.label}</span>
+                                            <span>{cat.count}</span>
+                                        </div>
+                                        <div className="w-full bg-slate-700 rounded-full h-6 overflow-hidden">
+                                            <div className={`h-full ${cat.color} transition-all duration-1000`} style={{ width: `${totalVotes ? (cat.count / totalVotes) * 100 : 0}%` }}></div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        function SchoolExhibitionApp() {
+          // --- State Management ---
+          const [user, setUser] = useState(null);
+          const [userName, setUserName] = useState("");
+          const [isAdmin, setIsAdmin] = useState(false);
+          const [view, setView] = useState("login"); 
+          const [projects, setProjects] = useState([]);
+          const [votes, setVotes] = useState([]);
+          const [scores, setScores] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [toast, setToast] = useState(null);
+          const [darkMode, setDarkMode] = useState(false);
+          const [projectorMode, setProjectorMode] = useState(false);
+          
+          // Search & Filter
+          const [searchQuery, setSearchQuery] = useState("");
+          const [sortBy, setSortBy] = useState("score");
+
+          // Local Draft State
+          const [draftScores, setDraftScores] = useState({});
+
+          // Admin inputs
+          const [newProjectName, setNewProjectName] = useState("");
+          const [newStudentName, setNewStudentName] = useState("");
+          const [adminPassword, setAdminPassword] = useState("");
+          const [expandedProjectId, setExpandedProjectId] = useState(null);
+
+          const mounted = useRef(false);
+
+          // --- Helper Functions ---
+          const showToast = (message, type = 'success') => {
+            setToast({ message, type });
+            setTimeout(() => setToast(null), 3000);
+          };
+
+          const toggleDarkMode = () => {
+              setDarkMode(!darkMode);
+              document.documentElement.classList.toggle('dark');
+          };
+
+          // --- Firebase Init ---
+          useEffect(() => {
+            if (!auth) {
+                setLoading(false);
+                return;
+            }
+
+            mounted.current = true;
+            const initAuth = async () => {
+              try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                  await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                  await signInAnonymously(auth);
+                }
+              } catch (error) {
+                console.error("Auth Error:", error);
+                if (!auth.currentUser) await signInAnonymously(auth);
+              }
+            };
+            initAuth();
+            
+            const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+              if (!mounted.current) return;
+              setUser(currentUser);
+              if (currentUser) {
+                setLoading(false);
+                const storedName = localStorage.getItem(`user_name_${appId}`);
+                const storedRole = localStorage.getItem(`user_role_${appId}`);
+                if (storedName) {
+                  setUserName(storedName);
+                  if (storedRole === 'admin') {
+                    setIsAdmin(true);
+                    setView('admin');
+                  } else {
+                    setView('vote');
+                  }
+                }
+              }
+            });
+            return () => { 
+                unsubscribe(); 
+                mounted.current = false;
+            };
+          }, []);
+
+          // --- Real-time Data ---
+          useEffect(() => {
+            if (!user || !db) return;
+            try {
+                const unsubProjects = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'projects'), orderBy('createdAt', 'desc')), 
+                  (snap) => setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+                const unsubVotes = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'path_votes')), 
+                  (snap) => setVotes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+                const unsubScores = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'scores')), 
+                  (snap) => setScores(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+                return () => { unsubProjects(); unsubVotes(); unsubScores(); };
+            } catch (e) { console.error(e); }
+          }, [user]);
+
+          // --- Handlers ---
+          const handleLogin = () => {
+            if (!userName.trim()) {
+                showToast("لطفا نام خود را وارد کنید", "error");
+                return;
+            }
+            if (adminPassword === "admin123") {
+              setIsAdmin(true);
+              setView("admin");
+              localStorage.setItem(`user_role_${appId}`, 'admin');
+            } else {
+              setIsAdmin(false);
+              setView("vote");
+              localStorage.setItem(`user_role_${appId}`, 'judge');
+            }
+            localStorage.setItem(`user_name_${appId}`, userName);
+            showToast("خوش آمدید!");
+          };
+
+          const handleLogout = () => {
+            localStorage.removeItem(`user_name_${appId}`);
+            localStorage.removeItem(`user_role_${appId}`);
+            setUserName("");
+            setAdminPassword("");
+            setIsAdmin(false);
+            setView("login");
+          };
+
+          const handleDatabaseReset = async () => {
+              const confirmMsg = "هشدار بسیار مهم: \nآیا مطمئن هستید؟ این کار تمام آرا و نمرات ثبت شده در دیتابیس را برای همیشه پاک می‌کند و قابل بازگشت نیست!";
+              if(window.confirm(confirmMsg)) {
+                  if(window.confirm("برای اطمینان مجدد: آیا واقعا می‌خواهید همه چیز را صفر کنید؟")) {
+                    setLoading(true);
+                    try {
+                        // Delete Votes
+                        const voteSnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'path_votes'));
+                        voteSnapshot.forEach(async (doc) => await deleteDoc(doc.ref));
+
+                        // Delete Scores
+                        const scoreSnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'scores'));
+                        scoreSnapshot.forEach(async (doc) => await deleteDoc(doc.ref));
+                        
+                        showToast("دیتابیس با موفقیت پاکسازی شد", "success");
+                    } catch (error) {
+                        console.error(error);
+                        showToast("خطا در پاکسازی دیتابیس", "error");
+                    }
+                    setLoading(false);
+                  }
+              }
+          };
+
+          const toggleProjectorMode = () => {
+              if (!projectorMode) {
+                  setProjectorMode(true);
+                  document.documentElement.requestFullscreen().catch((e) => console.log("Fullscreen request failed:", e));
+              } else {
+                  setProjectorMode(false);
+                  document.exitFullscreen().catch((e) => console.log("Fullscreen exit failed:", e));
+              }
+          };
+
+          const submitPathVote = async (category) => {
+            if (!user) return;
+            const existingVote = votes.find(v => v.userId === user.uid);
+            const data = { userId: user.uid, userName, category, timestamp: new Date() };
+            
+            if (existingVote) {
+              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'path_votes', existingVote.id), data, { merge: true });
+            } else {
+              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'path_votes'), data);
+            }
+            setView("judge");
+            showToast(`مسیر ${category} انتخاب شد`);
+          };
+
+          const handleDraftChange = (projectId, field, value) => {
+              setDraftScores(prev => ({
+                  ...prev,
+                  [projectId]: {
+                      ...prev[projectId],
+                      [field]: field === 'comment' ? value : parseInt(value)
+                  }
+              }));
+          };
+
+          const submitScoreToDB = async (projectId) => {
+            if (!user) return;
+            const draft = draftScores[projectId];
+            const existingScore = scores.find(s => s.projectId === projectId && s.judgeId === user.uid) || {};
+            
+            const dataToSave = {
+                behavior: draft?.behavior !== undefined ? draft.behavior : (existingScore.behavior || 0),
+                work: draft?.work !== undefined ? draft.work : (existingScore.work || 0),
+                comment: draft?.comment !== undefined ? draft.comment : (existingScore.comment || ""),
+            };
+
+            const scoreId = `${user.uid}_${projectId}`;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scores', scoreId), {
+              projectId,
+              judgeId: user.uid,
+              judgeName: userName,
+              updatedAt: new Date(),
+              ...dataToSave
+            }, { merge: true });
+
+            const newDrafts = {...draftScores};
+            delete newDrafts[projectId];
+            setDraftScores(newDrafts);
+
+            showToast("رای شما با موفقیت ثبت شد");
+          };
+
+          const addProject = async () => {
+            if (!newProjectName || !newStudentName) return;
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'projects'), {
+              name: newProjectName,
+              student: newStudentName,
+              createdAt: new Date()
+            });
+            setNewProjectName("");
+            setNewStudentName("");
+            showToast("پروژه جدید اضافه شد");
+          };
+
+          const deleteProject = async (id) => {
+            if(window.confirm("آیا از حذف این پروژه اطمینان دارید؟")) {
+              await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'projects', id));
+              showToast("پروژه حذف شد", "error");
+            }
+          };
+
+          const exportToCSV = () => {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Rank,Project Name,Student,Vote Count,Total Score,Avg Behavior,Avg Work\n";
+            projectResults.forEach((p, index) => {
+                csvContent += `${index + 1},${p.name},${p.student},${p.voteCount},${p.totalScore},${p.avgBehavior},${p.avgWork}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "exhibition_results.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
+
+          // --- Calculations ---
+          const voteCounts = useMemo(() => {
+            const counts = { tech: 0, fun: 0, culture: 0 };
+            votes.forEach(v => {
+              if (v.category === 'تکنولوژی') counts.tech++;
+              if (v.category === 'سرگرمی') counts.fun++;
+              if (v.category === 'فرهنگی') counts.culture++;
+            });
+            return counts;
+          }, [votes]);
+
+          const projectResults = useMemo(() => {
+            let processed = projects.map(p => {
+              const pScores = scores.filter(s => s.projectId === p.id);
+              let totalBehavior = 0, totalWork = 0;
+              pScores.forEach(s => { totalBehavior += (s.behavior || 0); totalWork += (s.work || 0); });
+              const count = pScores.length;
+
+              return {
+                ...p,
+                totalScore: totalBehavior + totalWork,
+                avgBehavior: count ? (totalBehavior / count).toFixed(1) : 0,
+                avgWork: count ? (totalWork / count).toFixed(1) : 0,
+                voteCount: count,
+                details: pScores
+              };
+            });
+
+            // Filtering
+            if (searchQuery) {
+                processed = processed.filter(p => 
+                    p.name.includes(searchQuery) || p.student.includes(searchQuery)
+                );
+            }
+
+            // Sorting
+            processed.sort((a, b) => {
+                if (sortBy === 'score') return b.totalScore - a.totalScore;
+                if (sortBy === 'votes') return b.voteCount - a.voteCount;
+                if (sortBy === 'name') return a.name.localeCompare(b.name);
+                return 0;
+            });
+
+            return processed;
+          }, [projects, scores, searchQuery, sortBy]);
+
+          const judgeProgress = useMemo(() => {
+             if (!projects.length) return 0;
+             const judgedCount = projects.filter(p => scores.some(s => s.projectId === p.id && s.judgeId === user?.uid)).length;
+             return Math.round((judgedCount / projects.length) * 100);
+          }, [projects, scores, user]);
+
+          // Latest activities for Ticker
+          const latestActivities = useMemo(() => {
+              const all = [...votes.map(v => ({...v, type: 'vote', time: v.timestamp})), 
+                           ...scores.map(s => ({...s, type: 'score', time: s.updatedAt}))].filter(a => a.time);
+              
+              return all.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 5);
+          }, [votes, scores]);
+
+
+          if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-slate-900 text-teal-700 font-bold animate-pulse">در حال اتصال به پایگاه داده...</div>;
+
+          // --- Projector Mode Overlay ---
+          if (projectorMode && isAdmin) {
+              return <ProjectorView projectResults={projectResults} voteCounts={voteCounts} totalVotes={votes.length} onClose={toggleProjectorMode} />;
+          }
+
+          // --- 1. Login View ---
+          if (view === "login") {
+            return (
+              <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 ${darkMode ? 'bg-slate-900' : 'bg-gradient-to-br from-teal-700 to-blue-900'}`} dir="rtl">
+                <button onClick={toggleDarkMode} className="absolute top-4 left-4 p-3 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
+                    {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
+                </button>
+                {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+                <Card className="w-full max-w-md space-y-8 animate-in fade-in zoom-in duration-300 !border-0 shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-yellow-400 via-red-500 to-pink-500"></div>
+                  <div className="text-center space-y-2">
+                    <div className="bg-teal-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                       <Award className="text-teal-700" size={40} />
+                    </div>
+                    <h1 className="text-2xl font-black text-gray-800 dark:text-white tracking-tight">مدرسه علوم پزشکی شیراز</h1>
+                    <p className="text-gray-500 dark:text-slate-400 text-sm font-medium">سامانه هوشمند داوری و نظرسنجی</p>
+                  </div>
+                  
+                  <div className="space-y-5">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 dark:text-slate-300 mb-2">نام داور / بازدیدکننده</label>
+                      <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="مثلا: علی محمدی" />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 dark:text-slate-300 mb-2">رمز عبور (اختیاری)</label>
+                      <Input 
+                        type="password" 
+                        value={adminPassword} 
+                        onChange={(e) => setAdminPassword(e.target.value)} 
+                        placeholder="فقط برای مدیران" 
+                      />
+                    </div>
+
+                    <Button onClick={handleLogin} className="w-full py-3 text-lg !bg-teal-600 hover:!bg-teal-700 shadow-teal-200">
+                      ورود به سامانه
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            );
+          }
+
+          // --- 2. Admin Panel ---
+          if (view === "admin") {
+            return (
+              <div className={`min-h-screen p-4 pb-20 font-sans transition-colors duration-300 ${darkMode ? 'bg-slate-950' : 'bg-slate-50'}`} dir="rtl">
+                {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+                <div className="max-w-7xl mx-auto space-y-6">
+                  
+                  {/* Header */}
+                  <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 sticky top-4 z-20 gap-4">
+                    <div>
+                      <h1 className="text-2xl font-bold text-slate-800 dark:text-white">پنل مدیریت</h1>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">کنترل نمایشگاه و آمار</p>
+                    </div>
+                    {/* Live Ticker */}
+                    <div className="hidden lg:flex flex-1 mx-8 overflow-hidden bg-slate-100 dark:bg-slate-800 rounded-lg p-2 h-10 items-center">
+                        <div className="flex gap-8 animate-marquee whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
+                            <span className="font-bold text-teal-600">آخرین فعالیت‌ها:</span>
+                            {latestActivities.map((act, i) => (
+                                <span key={i} className="flex items-center gap-1">
+                                    <Zap size={12} className="text-yellow-500"/>
+                                    {act.userName || act.judgeName} 
+                                    {act.type === 'vote' ? `به مسیر ${act.category} رای داد` : `به پروژه امتیاز داد`}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button variant="ghost" onClick={toggleDarkMode}>
+                            {darkMode ? <Sun size={18}/> : <Moon size={18}/>}
+                        </Button>
+                        <Button variant="primary" onClick={toggleProjectorMode} title="حالت پروژکتور">
+                            <Maximize size={18}/> پروژکتور
+                        </Button>
+                        <Button variant="outline" onClick={handleLogout} className="text-red-500 border-red-200 hover:bg-red-50">
+                           <LogOut size={16} /> خروج
+                        </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Live Voting Stats */}
+                    <Card className="lg:col-span-1 border-t-4 border-teal-500">
+                      <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-lg font-bold flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                          <Activity className="text-teal-500" />
+                          آمار بازدید (زنده)
+                        </h2>
+                        <div className="flex items-center gap-2">
+                            {/* REAL DATABASE RESET */}
+                            <button onClick={handleDatabaseReset} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="پاکسازی کامل دیتابیس">
+                                <RefreshCw size={14} />
+                            </button>
+                            <span className="text-xs bg-teal-100 text-teal-800 px-3 py-1 rounded-full font-bold animate-pulse">
+                            {votes.length} نفر
+                            </span>
+                        </div>
+                      </div>
+                      <div className="space-y-6">
+                        {[
+                          { label: 'تکنولوژی', count: voteCounts.tech, color: 'bg-blue-500', total: votes.length },
+                          { label: 'سرگرمی', count: voteCounts.fun, color: 'bg-emerald-500', total: votes.length },
+                          { label: 'فرهنگی', count: voteCounts.culture, color: 'bg-indigo-500', total: votes.length }
+                        ].map((item) => (
+                          <div key={item.label}>
+                            <div className="flex justify-between text-sm mb-2 font-medium text-slate-600 dark:text-slate-400">
+                              <span>{item.label}</span>
+                              <span>{item.count} رای</span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
+                              <div 
+                                className={`h-full ${item.color} transition-all duration-1000 ease-out`} 
+                                style={{ width: `${item.total ? (item.count / item.total) * 100 : 0}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+
+                    {/* Add Project */}
+                    <Card className="lg:col-span-2 border-t-4 border-blue-500">
+                      <div className="flex justify-between items-center mb-4">
+                          <h2 className="text-lg font-bold flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                            <Plus className="text-blue-500" />
+                            مدیریت پروژه‌ها
+                          </h2>
+                          <Button onClick={exportToCSV} variant="outline" className="text-xs">
+                              <Download size={14}/> خروجی اکسل
+                          </Button>
+                      </div>
+                      <div className="flex flex-col md:flex-row gap-4 bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                        <Input 
+                          placeholder="عنوان پروژه" 
+                          value={newProjectName} 
+                          onChange={(e) => setNewProjectName(e.target.value)} 
+                          className="flex-1"
+                        />
+                        <Input 
+                          placeholder="نام ارائه‌دهنده" 
+                          value={newStudentName} 
+                          onChange={(e) => setNewStudentName(e.target.value)} 
+                          className="flex-1"
+                        />
+                        <Button onClick={addProject} variant="secondary" className="whitespace-nowrap">افزودن پروژه</Button>
+                      </div>
+                    </Card>
+                  </div>
+
+                  {/* Detailed Leaderboard */}
+                  <Card className="border-t-4 border-amber-500 overflow-hidden !p-0">
+                    <div className="p-6 border-b border-gray-100 dark:border-slate-700 bg-amber-50/30 dark:bg-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-200">
+                            <Award className="text-amber-500" />
+                            رده‌بندی نهایی
+                        </h2>
+                        {/* Search and Filter Controls */}
+                        <div className="flex gap-2 w-full md:w-auto">
+                            <div className="relative flex-1 md:w-64">
+                                <Search className="absolute right-3 top-3 text-gray-400" size={16}/>
+                                <Input 
+                                    placeholder="جستجو..." 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="!pr-10 !py-2 text-sm"
+                                />
+                            </div>
+                            <div className="relative">
+                                <select 
+                                    value={sortBy} 
+                                    onChange={(e) => setSortBy(e.target.value)}
+                                    className="appearance-none bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg py-2 px-8 text-sm focus:ring-2 focus:ring-teal-500 dark:text-white"
+                                >
+                                    <option value="score">امتیاز</option>
+                                    <option value="votes">تعداد رای</option>
+                                    <option value="name">الفبا</option>
+                                </select>
+                                <Filter className="absolute right-2 top-2.5 text-gray-400 pointer-events-none" size={14}/>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right">
+                        <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase font-bold tracking-wider">
+                          <tr>
+                            <th className="px-6 py-4">رتبه</th>
+                            <th className="px-6 py-4">پروژه</th>
+                            <th className="px-6 py-4">ارائه‌دهنده</th>
+                            <th className="px-6 py-4 text-center">آرا</th>
+                            <th className="px-6 py-4 text-center">امتیاز</th>
+                            <th className="px-6 py-4">عملیات</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                          {projectResults.map((p, idx) => (
+                            <React.Fragment key={p.id}>
+                              <tr className={`hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors ${idx === 0 ? "bg-amber-50/10" : ""}`}>
+                                <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">
+                                  {idx === 0 ? <span className="inline-flex items-center justify-center w-8 h-8 bg-amber-100 text-amber-600 rounded-full shadow-sm">1</span> : idx + 1}
+                                </td>
+                                <td className="px-6 py-4 font-medium text-slate-800 dark:text-slate-200">{p.name}</td>
+                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{p.student}</td>
+                                <td className="px-6 py-4 text-center">
+                                    <span className="inline-block px-3 py-1 bg-slate-100 dark:bg-slate-700 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300">{p.voteCount}</span>
+                                </td>
+                                <td className="px-6 py-4 text-center font-bold text-teal-600 dark:text-teal-400 text-lg">{p.totalScore}</td>
+                                <td className="px-6 py-4 flex gap-2">
+                                    <button 
+                                        onClick={() => setExpandedProjectId(expandedProjectId === p.id ? null : p.id)}
+                                        className="p-2 bg-blue-50 dark:bg-slate-700 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-100 transition"
+                                        title="مشاهده جزئیات"
+                                    >
+                                        {expandedProjectId === p.id ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+                                    </button>
+                                    <button onClick={() => deleteProject(p.id)} className="p-2 bg-red-50 dark:bg-slate-700 text-red-500 rounded hover:bg-red-100 transition">
+                                     <Trash2 size={16} />
+                                   </button>
+                                </td>
+                              </tr>
+                              {expandedProjectId === p.id && (
+                                  <tr className="bg-slate-50 dark:bg-slate-900 animate-in slide-in-from-top-2">
+                                      <td colSpan="7" className="px-6 py-4">
+                                          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden shadow-inner">
+                                              <div className="px-4 py-2 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-500 dark:text-slate-300">
+                                                  نظرات ثبت شده
+                                              </div>
+                                              {p.details.length === 0 ? (
+                                                  <div className="p-4 text-center text-gray-400 text-sm">هنوز داوری نشده است.</div>
+                                              ) : (
+                                                  <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                                                      {p.details.map((score, i) => (
+                                                          <div key={i} className="p-3 flex flex-col md:flex-row gap-3 text-sm dark:text-slate-300">
+                                                              <div className="font-bold w-32 truncate">{score.judgeName}</div>
+                                                              <div className="flex gap-2">
+                                                                  <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 px-2 rounded text-xs">رفتار: {score.behavior}</span>
+                                                                  <span className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 px-2 rounded text-xs">کار: {score.work}</span>
+                                                              </div>
+                                                              <div className="text-gray-600 dark:text-gray-400 flex-1">{score.comment}</div>
+                                                          </div>
+                                                      ))}
+                                                  </div>
+                                              )}
+                                          </div>
+                                      </td>
+                                  </tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                </div>
+              </div>
+            );
+          }
+
+          // --- 3. Judge View ---
+          return (
+            <div className={`min-h-screen pb-20 font-sans transition-colors duration-300 ${darkMode ? 'bg-slate-950' : 'bg-slate-50'}`} dir="rtl">
+              {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+              
+              {/* Navbar with Progress */}
+              <div className="bg-teal-800 text-white shadow-lg sticky top-0 z-10">
+                  <div className="px-4 py-3 flex justify-between items-center">
+                    <div>
+                    <h1 className="font-bold text-lg flex items-center gap-2">
+                        <ClipboardList size={20}/> 
+                        پنل داوری
+                    </h1>
+                    <p className="text-xs text-teal-200 opacity-80">{userName}</p>
+                    </div>
+                    <div className="flex gap-2">
+                    <button onClick={toggleDarkMode} className="p-2 text-teal-100 hover:bg-white/10 rounded-lg">
+                         {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
+                    </button>
+                    <button onClick={() => setView("vote")} className={`p-2 rounded-lg transition-colors ${view === "vote" ? "bg-white/20 text-white" : "text-teal-100 hover:bg-white/10"}`}>
+                        <Activity size={20} />
+                    </button>
+                    <button onClick={() => setView("judge")} className={`p-2 rounded-lg transition-colors ${view === "judge" ? "bg-white/20 text-white" : "text-teal-100 hover:bg-white/10"}`}>
+                        <CheckCircle size={20} />
+                    </button>
+                    <button onClick={handleLogout} className="text-teal-200 p-2 hover:text-white" title="خروج">
+                        <LogOut size={20} />
+                    </button>
+                    </div>
+                  </div>
+                  {/* Progress Bar */}
+                  {view === "judge" && (
+                    <div className="w-full bg-teal-900 h-1.5">
+                        <div 
+                            className="bg-yellow-400 h-1.5 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(250,204,21,0.7)]" 
+                            style={{ width: `${judgeProgress}%` }}
+                        ></div>
+                    </div>
+                  )}
+              </div>
+
+              <div className="max-w-md mx-auto p-4 space-y-6 mt-4">
+                
+                {/* Voting View */}
+                {view === "vote" && (
+                  <div className="animate-in slide-in-from-bottom duration-500">
+                    <Card className="text-center mb-6 !bg-gradient-to-br !from-teal-600 !to-teal-800 !text-white !border-0 overflow-hidden relative">
+                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+                      <h2 className="text-xl font-bold mb-2 relative z-10">خوش آمدید، {userName}</h2>
+                      <p className="text-teal-100 text-sm relative z-10">برای شروع بازدید، لطفا مسیر مورد نظر خود را انتخاب کنید.</p>
+                    </Card>
+                    
+                    <div className="grid gap-3">
+                      {[
+                        { id: 'تکنولوژی', icon: <Smartphone size={28} />, color: 'border-blue-500 text-blue-600', bg: 'bg-blue-50 dark:bg-slate-800' },
+                        { id: 'سرگرمی', icon: <Users size={28} />, color: 'border-emerald-500 text-emerald-600', bg: 'bg-emerald-50 dark:bg-slate-800' },
+                        { id: 'فرهنگی', icon: <Award size={28} />, color: 'border-indigo-500 text-indigo-600', bg: 'bg-indigo-50 dark:bg-slate-800' }
+                      ].map(cat => (
+                        <button
+                          key={cat.id}
+                          onClick={() => submitPathVote(cat.id)}
+                          className={`relative flex items-center gap-4 p-5 bg-white dark:bg-slate-800 rounded-xl shadow-sm border-r-4 hover:shadow-md hover:translate-x-[-4px] transition-all ${cat.color}`}
+                        >
+                          <div className={`p-3 rounded-full ${cat.bg}`}>
+                            {cat.icon}
+                          </div>
+                          <span className="font-bold text-lg text-gray-800 dark:text-white">{cat.id}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Judging View */}
+                {view === "judge" && (
+                  <div className="animate-in slide-in-from-bottom duration-500 space-y-4">
+                     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-teal-100 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                         <h2 className="font-bold text-teal-800 dark:text-teal-400 text-sm">وضعیت داوری شما</h2>
+                         <span className="text-xs bg-teal-50 dark:bg-teal-900 text-teal-600 dark:text-teal-200 px-3 py-1 rounded-full font-bold">{judgeProgress}% تکمیل شده</span>
+                     </div>
+
+                    {projects.length === 0 ? (
+                        <div className="text-center py-12 text-gray-400">لیست خالی است...</div>
+                    ) : (
+                        projects.map(project => {
+                          const dbScore = scores.find(s => s.projectId === project.id && s.judgeId === user?.uid) || {};
+                          const localDraft = draftScores[project.id] || {};
+                          
+                          const currentBehavior = localDraft.behavior !== undefined ? localDraft.behavior : (dbScore.behavior || 0);
+                          const currentWork = localDraft.work !== undefined ? localDraft.work : (dbScore.work || 0);
+                          const currentComment = localDraft.comment !== undefined ? localDraft.comment : (dbScore.comment || "");
+
+                          const isSaved = !localDraft.behavior && !localDraft.work && !localDraft.comment && (dbScore.behavior || dbScore.work);
+                          const hasUnsavedChanges = localDraft.behavior !== undefined || localDraft.work !== undefined || localDraft.comment !== undefined;
+
+                          return (
+                            <Card key={project.id} className={`!p-5 border-t-4 transition-all duration-300 ${isSaved ? 'border-t-emerald-500' : 'border-t-gray-300 dark:border-t-slate-600'}`}>
+                              <div className="mb-4 flex justify-between items-start">
+                                <div>
+                                    <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-1">{project.name}</h3>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+                                        <span className="text-sm text-gray-500 dark:text-gray-400">{project.student}</span>
+                                    </div>
+                                </div>
+                                {isSaved && !hasUnsavedChanges && (
+                                    <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-900/50 dark:text-emerald-400 px-2 py-1 rounded-md">
+                                        <Check size={12}/> ثبت شده
+                                    </span>
+                                )}
+                              </div>
+
+                              <div className="space-y-5">
+                                <div className="grid grid-cols-2 gap-4 bg-gray-50 dark:bg-slate-900 p-3 rounded-lg border border-gray-100 dark:border-slate-700">
+                                  <div>
+                                    <label className="block text-xs font-bold text-blue-600 dark:text-blue-400 mb-1 text-center">نمره رفتار</label>
+                                    <div className="flex flex-col items-center">
+                                       <span className="text-2xl font-black text-blue-600 dark:text-blue-400 mb-1">{currentBehavior}</span>
+                                       <input 
+                                         type="range" min="0" max="10" 
+                                         value={currentBehavior}
+                                         onChange={(e) => handleDraftChange(project.id, 'behavior', e.target.value)}
+                                         className="w-full h-2 bg-blue-100 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                       />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-bold text-purple-600 dark:text-purple-400 mb-1 text-center">نمره کار</label>
+                                    <div className="flex flex-col items-center">
+                                       <span className="text-2xl font-black text-purple-600 dark:text-purple-400 mb-1">{currentWork}</span>
+                                       <input 
+                                         type="range" min="0" max="10" 
+                                         value={currentWork}
+                                         onChange={(e) => handleDraftChange(project.id, 'work', e.target.value)}
+                                         className="w-full h-2 bg-purple-100 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                       />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div>
+                                    <TextArea 
+                                        placeholder="نقد و بررسی شما (اختیاری)..."
+                                        value={currentComment}
+                                        onChange={(e) => handleDraftChange(project.id, 'comment', e.target.value)}
+                                        className="!text-sm !h-20 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <Button 
+                                    onClick={() => submitScoreToDB(project.id)} 
+                                    disabled={!hasUnsavedChanges}
+                                    variant={hasUnsavedChanges ? "primary" : "outline"}
+                                    className={`w-full py-3 ${hasUnsavedChanges ? "animate-pulse" : "opacity-50"}`}
+                                >
+                                    {hasUnsavedChanges ? (
+                                        <React.Fragment>
+                                            <Send size={18} /> ثبت نهایی و ارسال
+                                        </React.Fragment>
+                                    ) : (
+                                        <React.Fragment>
+                                            <CheckCircle size={18} /> تغییرات ذخیره شده است
+                                        </React.Fragment>
+                                    )}
+                                </Button>
+                              </div>
+                            </Card>
+                          );
+                        })
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        const container = document.getElementById('root');
+        const root = createRoot(container);
+        root.render(<SchoolExhibitionApp />);
+    </script>
+</body>
+</html>
